@@ -1,0 +1,158 @@
+Pipeline behavior
+Stage 1 — Deployment Test
+
+This stage:
+
+Clones student-management-system.
+Stops any previous deployment.
+Builds all Docker images.
+Starts PostgreSQL, Spring Boot, and Angular.
+Waits until:
+http://localhost:8080/api/students responds;
+http://localhost:4200 responds.
+Verifies that all three containers are running.
+
+Your Compose configuration builds the backend from ./student-api, builds the frontend from ./student-frontend, waits for PostgreSQL’s health check, and exposes the required ports.
+
+Stage 2 — System Testing
+
+This stage:
+
+Clones student-management-Test.
+Runs the Cucumber/Selenium tests in headless mode.
+Uses the deployed frontend at http://localhost:4200.
+Generates:
+Surefire/JUnit results;
+Cucumber HTML report;
+Cucumber JSON report.
+
+The automation repository documents mvn clean test -Dheadless=true and supports overriding the tested URL with -DbaseUrl=http://localhost:4200
+
+3. Configure Jenkins tools
+
+In Jenkins, open:
+
+Manage Jenkins
+→ Tools
+
+Configure:
+
+JDK
+Name: JDK17
+Java version: 17
+Maven
+Name: Maven3
+Version: Maven 3.9.x
+
+These names must match the pipeline:
+
+tools {
+    jdk 'JDK17'
+    maven 'Maven3'
+}
+4. Required Jenkins plugins
+
+Install or verify:
+
+Pipeline
+Git
+JUnit
+Credentials Binding
+
+Docker Compose is invoked through the command line, so no special Docker Pipeline plugin is required for this Jenkinsfile.
+
+5. Jenkins machine prerequisites
+
+On the Jenkins agent, verify:
+
+java -version
+mvn -version
+git --version
+docker version
+docker compose version
+
+Google Chrome must also be installed because your Cucumber project uses Selenium ChromeDriver. The pipeline launches it with:
+
+-Dheadless=true
+6. Important Windows Docker point
+
+When Jenkins runs as a Windows service, it may not automatically have access to Docker Desktop running in your user session.
+
+Test from Jenkins with a temporary pipeline:
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Docker Check') {
+            steps {
+                bat '''
+                    whoami
+                    docker version
+                    docker compose version
+                '''
+            }
+        }
+    }
+}
+
+If docker version fails in Jenkins but works in your personal terminal, run the Jenkins service with your Windows user account:
+
+Windows Services
+→ Jenkins
+→ Properties
+→ Log On
+→ This account
+
+Then restart Jenkins and Docker Desktop.
+
+7. Create the Jenkins job
+
+In Jenkins:
+
+New Item
+→ Pipeline
+
+Name:
+
+student-management-system-testing
+
+Choose:
+
+Pipeline script from SCM
+
+Configure:
+
+SCM: Git
+Repository URL:
+https://github.com/walidhnaien/student-management-Test.git
+
+Branch:
+*/master
+
+Script Path:
+Jenkinsfile
+
+Then click:
+
+Save
+→ Build Now
+8. Expected pipeline
+Pipeline
+│
+├── Deployment Test
+│   ├── Checkout system repository
+│   ├── Build Docker images
+│   ├── Start containers
+│   ├── Check API
+│   └── Check frontend
+│
+└── System Testing
+    ├── Checkout automation repository
+    ├── Run Maven
+    ├── Run Cucumber
+    ├── Run Selenium headless
+    └── Publish reports
+
+After the build, Jenkins will display the JUnit test result, while the Cucumber report will be downloadable from Build Artifacts.
+
