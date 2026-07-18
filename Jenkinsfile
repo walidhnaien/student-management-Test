@@ -63,7 +63,7 @@ pipeline {
                                 [int]$DelaySeconds = 5
                             )
 
-                            Write-Host "Waiting for $Name: $Url"
+                            Write-Host "Waiting for ${Name}: ${Url}"
 
                             for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
                                 try {
