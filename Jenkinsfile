@@ -45,7 +45,7 @@ pipeline {
                     bat '''
                         docker version
                         docker compose version
-
+                        docker rm -f student-postgres 2>$null
                         docker compose down -v --remove-orphans
                         docker compose up -d --build
 
