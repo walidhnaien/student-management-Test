@@ -1,0 +1,9 @@
+# Created at 2026-07-18T14:10:13.755
+org.junit.platform.launcher.core.DiscoveryIssueException: TestEngine with ID 'cucumber' encountered a critical issue during test discovery:
+
+(1) [ERROR] Failed to parse resource at: classpath:features/student_creation.feature
+(20:3): expected: #EOF, #TableRow, #DocStringSeparator, #StepLine, #TagLine, #ExamplesLine, #ScenarioLine, #RuleLine, #Comment, #Empty, got 'Scénario outline: Enregistrer un étudiant avec des données valides'
+(31:7): inconsistent cell count within the table
+    Source: ClasspathResourceSource [classpathResourceName = 'features/student_creation.feature', filePosition = null]
+
+

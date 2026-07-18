@@ -1,0 +1,7 @@
+# Created at 2026-07-18T14:10:48.230
+TestEngine with ID 'cucumber' encountered a critical issue during test discovery:
+
+(1) [ERROR] Failed to parse resource at: classpath:features/student_creation.feature
+(31:7): inconsistent cell count within the table
+    Source: ClasspathResourceSource [classpathResourceName = 'features/student_creation.feature', filePosition = null]
+
