@@ -8,8 +8,8 @@ pipeline {
     }
 
     tools {
-        jdk 'JDK17'
-        maven 'Maven3'
+        jdk 'jdk-17'
+        maven 'M3'
     }
 
     environment {
@@ -25,7 +25,6 @@ pipeline {
         FRONTEND_URL = 'http://localhost:4200'
         API_URL = 'http://localhost:8080/api/students'
     }
-
     stages {
 
         stage('Deployment Test') {
