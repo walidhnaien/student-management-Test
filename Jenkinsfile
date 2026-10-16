@@ -7,6 +7,14 @@ pipeline {
         disableConcurrentBuilds()
     }
 
+    parameters {
+        string(
+            name: 'TEST_BRANCH',
+            defaultValue: 'master',
+            description: 'Git branch of student-management-Test to build'
+        )
+    }
+
     tools {
         jdk 'jdk-17'
         maven 'M3'
@@ -20,7 +28,6 @@ pipeline {
             'https://github.com/walidhnaien/student-management-Test.git'
 
         SYSTEM_BRANCH = 'master'
-        TEST_BRANCH = 'master'
 
         FRONTEND_URL = 'http://localhost:4200'
         API_URL = 'http://localhost:8080/api/students'
@@ -122,12 +129,13 @@ pipeline {
         stage('System Testing') {
             steps {
                 echo 'Checkout and execute Cucumber/Selenium tests'
+                echo "Testing student-management-Test branch: ${params.TEST_BRANCH}"
 
                 dir('student-management-Test') {
                     checkout([
                         $class: 'GitSCM',
                         branches: [[
-                            name: "*/${TEST_BRANCH}"
+                            name: "*/${params.TEST_BRANCH}"
                         ]],
                         userRemoteConfigs: [[
                             url: "${TEST_REPOSITORY}"
