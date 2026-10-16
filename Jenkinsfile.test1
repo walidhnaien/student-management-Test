@@ -1,0 +1,148 @@
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout(true)
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    tools {
+        jdk 'jdk-17'
+        maven 'M3'
+    }
+
+    environment {
+        SYSTEM_REPOSITORY = 'https://github.com/walidhnaien/student-management-system.git'
+        TEST_REPOSITORY = 'https://github.com/walidhnaien/student-management-Test.git'
+        SYSTEM_BRANCH = 'master'
+        TEST_BRANCH = 'test1'
+        FRONTEND_URL = 'http://localhost:4200'
+        API_URL = 'http://localhost:8080/api/students'
+    }
+
+    stages {
+        stage('Check Environment') {
+            steps {
+                bat 'java -version'
+                bat 'mvn -version'
+                bat 'git --version'
+                bat 'docker --version'
+                bat 'docker compose version'
+            }
+        }
+
+        stage('Checkout Application') {
+            steps {
+                dir('student-app') {
+                    git branch: "${SYSTEM_BRANCH}", url: "${SYSTEM_REPOSITORY}"
+                }
+            }
+        }
+
+        stage('Checkout Tests') {
+            steps {
+                echo "Testing student-management-Test branch: ${TEST_BRANCH}"
+                dir('student-tests') {
+                    git branch: "${TEST_BRANCH}", url: "${TEST_REPOSITORY}"
+                }
+            }
+        }
+
+        stage('Verify Projects') {
+            steps {
+                bat 'dir student-app'
+                bat 'dir student-tests'
+            }
+        }
+
+        stage('Start Application') {
+            steps {
+                dir('student-app') {
+                    bat 'docker compose down --remove-orphans'
+                    bat 'docker compose up -d --build'
+                    bat 'docker compose ps'
+                }
+            }
+        }
+
+        stage('Wait for Application') {
+            steps {
+                powershell '''
+                    $ErrorActionPreference = 'Stop'
+
+                    function Wait-ForUrl {
+                        param([string]$Url, [string]$Name)
+
+                        for ($attempt = 1; $attempt -le 40; $attempt++) {
+                            try {
+                                $response = Invoke-WebRequest `
+                                    -Uri $Url `
+                                    -UseBasicParsing `
+                                    -TimeoutSec 10
+
+                                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+                                    Write-Host "$Name is available."
+                                    return
+                                }
+                            }
+                            catch {
+                                Write-Host "Waiting for $Name ($attempt/40)."
+                            }
+
+                            Start-Sleep -Seconds 5
+                        }
+
+                        throw "$Name did not become available: $Url"
+                    }
+
+                    Wait-ForUrl -Url $env:API_URL -Name 'Student API'
+                    Wait-ForUrl -Url $env:FRONTEND_URL -Name 'Student frontend'
+                '''
+            }
+        }
+
+        stage('Run Cucumber Tests') {
+            steps {
+                dir('student-tests') {
+                    bat '''
+                        mvn -B clean test ^
+                          -Dheadless=true ^
+                          -DbaseUrl=%FRONTEND_URL%
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            junit(
+                allowEmptyResults: true,
+                testResults: 'student-tests/target/surefire-reports/*.xml'
+            )
+
+            archiveArtifacts(
+                allowEmptyArchive: true,
+                artifacts: '''
+                    student-tests/target/cucumber-report.html,
+                    student-tests/target/cucumber-report.json,
+                    student-tests/target/surefire-reports/**/*
+                '''
+            )
+
+            script {
+                if (fileExists('student-app/docker-compose.yml')) {
+                    dir('student-app') {
+                        bat '''
+                            docker compose logs --no-color > docker-compose.log 2>&1
+                            docker compose down -v --remove-orphans
+                        '''
+                    }
+                    archiveArtifacts allowEmptyArchive: true,
+                        artifacts: 'student-app/docker-compose.log'
+                }
+            }
+        }
+    }
+}
