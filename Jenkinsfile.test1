@@ -59,7 +59,29 @@ pipeline {
         stage('Start Application') {
             steps {
                 dir('student-app') {
-                    bat 'docker compose down --remove-orphans'
+                    powershell '''
+                        $ErrorActionPreference = 'Stop'
+                        $containerNames = @(
+                            'student-postgres',
+                            'student-backend',
+                            'student-frontend'
+                        )
+
+                        foreach ($containerName in $containerNames) {
+                            $containerIds = docker ps -aq --filter "name=^/$containerName$"
+                            if ($LASTEXITCODE -ne 0) {
+                                throw "Could not inspect Docker container: $containerName"
+                            }
+
+                            if ($containerIds) {
+                                docker rm -f $containerIds
+                                if ($LASTEXITCODE -ne 0) {
+                                    throw "Could not remove Docker container: $containerName"
+                                }
+                            }
+                        }
+                    '''
+                    bat 'docker compose down -v --remove-orphans'
                     bat 'docker compose up -d --build'
                     bat 'docker compose ps'
                 }
