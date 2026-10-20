@@ -160,7 +160,78 @@ pipeline {
                         '''
                     }
                 }
-            }
+            
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			def qaStatus = currentBuild.currentResult
+
+                try {
+                    withEnv([
+                        "QA_JOB=${env.JOB_NAME}",
+                        "QA_BUILD=${env.BUILD_NUMBER}",
+                        "QA_STATUS=${qaStatus}",
+                        "QA_URL=${env.BUILD_URL ?: ''}"
+                    ]) {
+                        powershell '''
+                            $payload = @{
+                                job = $env:QA_JOB
+                                build = [int]$env:QA_BUILD
+                                status = $env:QA_STATUS
+                                source = "Jenkins"
+                                url = $env:QA_URL
+                            } | ConvertTo-Json
+
+                            Invoke-RestMethod `
+                                -Uri "http://localhost:5678/webhook/jenkins-qa" `
+                                -Method POST `
+                                -ContentType "application/json" `
+                                -Body $payload `
+                                -TimeoutSec 10
+
+                            Write-Host "Notification envoyee a n8n"
+                        '''
+                    }
+                } catch (Exception e) {
+                    echo "Notification n8n echouee : ${e.message}"
+                }
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			}
 
             junit(
                 allowEmptyResults: true,

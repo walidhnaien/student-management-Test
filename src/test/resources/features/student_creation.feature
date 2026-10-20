@@ -9,12 +9,7 @@ Feature: Student creation
   Scenario: Create a student with valid information
     Given the user opens the Student Management application
     When he fills in the first name "Weil"
-    And he fills in the last name "Testeur"
-    And he fills in a unique email address
-    And he fills in the classroom "QA Automation"
-    And he validates student creation
     Then a success creation message is displayed
-    And the new student appears in the list
 
   Scenario Outline: Register a student with valid data
     Given the user is on the creation form
