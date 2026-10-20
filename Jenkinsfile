@@ -24,116 +24,96 @@ pipeline {
 
         FRONTEND_URL = 'http://localhost:4200'
         API_URL = 'http://localhost:8080/api/students'
+
+        N8N_WEBHOOK =
+            'http://localhost:5678/webhook/jenkins-qa'
     }
     stages {
 
-        stage('Deployment Test') {
+        stage('Checkout Application') {
             steps {
-                echo 'Checkout and deploy Student Management System'
-
                 dir('student-management-system') {
                     checkout([
                         $class: 'GitSCM',
-                        branches: [[
-                            name: "*/${SYSTEM_BRANCH}"
-                        ]],
+                        branches: [[name: "*/${SYSTEM_BRANCH}"]],
                         userRemoteConfigs: [[
                             url: "${SYSTEM_REPOSITORY}"
                         ]]
                     ])
+                }
+            }
+        }
 
-                    bat '''
-                        docker version
-                        docker compose version
-                        docker rm -f student-postgres student-backend student-frontend 2>$null
-                        docker compose down -v --remove-orphans
-                        docker compose up -d --build
+        stage('Check Deployment') {
+            steps {
+                echo 'Checking existing Student Management System'
 
-                        docker compose ps
-                    '''
+                powershell '''
+                    $ErrorActionPreference = "Stop"
 
-                    powershell '''
-                        $ErrorActionPreference = "Stop"
+                    function Wait-ForUrl {
+                        param(
+                            [string]$Url,
+                            [string]$Name,
+                            [int]$Attempts = 12,
+                            [int]$DelaySeconds = 5
+                        )
 
-                        function Wait-ForUrl {
-                            param(
-                                [string]$Url,
-                                [string]$Name,
-                                [int]$Attempts = 40,
-                                [int]$DelaySeconds = 5
-                            )
+                        for ($i = 1; $i -le $Attempts; $i++) {
+                            try {
+                                $response = Invoke-WebRequest `
+                                    -Uri $Url `
+                                    -UseBasicParsing `
+                                    -TimeoutSec 10
 
-                            Write-Host "Waiting for ${Name}: ${Url}"
-
-                            for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
-                                try {
-                                    $response = Invoke-WebRequest `
-                                        -Uri $Url `
-                                        -UseBasicParsing `
-                                        -TimeoutSec 10
-
-                                    if ($response.StatusCode -ge 200 `
-                                        -and $response.StatusCode -lt 400) {
-
-                                        Write-Host "$Name is available."
-                                        Write-Host "HTTP status: $($response.StatusCode)"
-                                        return
-                                    }
+                                if ($response.StatusCode -ge 200 -and
+                                    $response.StatusCode -lt 400) {
+                                    Write-Host "$Name is available"
+                                    return
                                 }
-                                catch {
-                                    Write-Host `
-                                        "Attempt $attempt/$Attempts failed for $Name."
-                                }
-
-                                Start-Sleep -Seconds $DelaySeconds
+                            }
+                            catch {
+                                Write-Host "Waiting for $Name ($i/$Attempts)"
                             }
 
-                            throw "$Name did not become available: $Url"
+                            Start-Sleep -Seconds $DelaySeconds
                         }
 
-                        Wait-ForUrl `
-                            -Url $env:API_URL `
-                            -Name "Spring Boot API"
+                        throw "$Name unavailable: $Url"
+                    }
 
-                        Wait-ForUrl `
-                            -Url $env:FRONTEND_URL `
-                            -Name "Angular frontend"
-                    '''
+                    Wait-ForUrl `
+                        -Url $env:API_URL `
+                        -Name "Spring Boot API"
 
-                    bat '''
-                        docker compose ps
+                    Wait-ForUrl `
+                        -Url $env:FRONTEND_URL `
+                        -Name "Angular Frontend"
+                '''
 
-                        docker inspect ^
-                          --format="{{.State.Status}}" ^
-                          student-postgres
+                bat '''
+                    docker ps --filter "name=student-"
+                '''
+            }
+        }
 
-                        docker inspect ^
-                          --format="{{.State.Status}}" ^
-                          student-backend
-
-                        docker inspect ^
-                          --format="{{.State.Status}}" ^
-                          student-frontend
-                    '''
+        stage('Checkout Tests') {
+            steps {
+                dir('student-management-Test') {
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${TEST_BRANCH}"]],
+                        userRemoteConfigs: [[
+                            url: "${TEST_REPOSITORY}"
+                        ]]
+                    ])
                 }
             }
         }
 
         stage('System Testing') {
             steps {
-                echo 'Checkout and execute Cucumber/Selenium tests'
-
                 dir('student-management-Test') {
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[
-                            name: "*/${TEST_BRANCH}"
-                        ]],
-                        userRemoteConfigs: [[
-                            url: "${TEST_REPOSITORY}"
-                        ]]
-                    ])
-
                     bat '''
                         java -version
                         mvn -version
@@ -150,34 +130,27 @@ pipeline {
     post {
         always {
             script {
-                if (fileExists(
-                    'student-management-system/docker-compose.yml'
-                )) {
-                    dir('student-management-system') {
-                        bat '''
-                            docker compose ps > docker-compose-status.log 2>&1
-                            docker compose logs --no-color > docker-compose.log 2>&1
-                        '''
-                    }
-                }
-            
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			def qaStatus = currentBuild.currentResult
+                // 1. Publish JUnit results
+                junit(
+                    allowEmptyResults: true,
+                    testResults:
+                        'student-management-Test/target/surefire-reports/*.xml'
+                )
 
+                // 2. Archive Cucumber and test reports
+                archiveArtifacts(
+                    allowEmptyArchive: true,
+                    artifacts: '''
+                        student-management-Test/target/cucumber-report.html,
+                        student-management-Test/target/cucumber-report.json,
+                        student-management-Test/target/surefire-reports/**/*
+                    '''
+                )
+
+                // 3. Get final Jenkins status
+                def qaStatus = currentBuild.currentResult
+
+                // 4. Notify n8n
                 try {
                     withEnv([
                         "QA_JOB=${env.JOB_NAME}",
@@ -186,6 +159,8 @@ pipeline {
                         "QA_URL=${env.BUILD_URL ?: ''}"
                     ]) {
                         powershell '''
+                            $ErrorActionPreference = "Stop"
+
                             $payload = @{
                                 job = $env:QA_JOB
                                 build = [int]$env:QA_BUILD
@@ -195,7 +170,7 @@ pipeline {
                             } | ConvertTo-Json
 
                             Invoke-RestMethod `
-                                -Uri "http://localhost:5678/webhook/jenkins-qa" `
+                                -Uri $env:N8N_WEBHOOK `
                                 -Method POST `
                                 -ContentType "application/json" `
                                 -Body $payload `
@@ -204,76 +179,23 @@ pipeline {
                             Write-Host "Notification envoyee a n8n"
                         '''
                     }
-                } catch (Exception e) {
-                    echo "Notification n8n echouee : ${e.message}"
                 }
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			}
-
-            junit(
-                allowEmptyResults: true,
-                testResults:
-                    'student-management-Test/target/surefire-reports/*.xml'
-            )
-
-            archiveArtifacts(
-                allowEmptyArchive: true,
-                artifacts: '''
-                    student-management-Test/target/cucumber-report.html,
-                    student-management-Test/target/cucumber-report.json,
-                    student-management-Test/target/surefire-reports/**/*,
-                    student-management-system/docker-compose.log,
-                    student-management-system/docker-compose-status.log
-                '''
-            )
+                catch (Exception e) {
+                    echo "n8n notification failed: ${e.message}"
+                }
+            }
         }
 
         success {
-            echo 'Deployment and system tests completed successfully.'
+            echo 'QA pipeline completed successfully.'
+        }
+
+        unstable {
+            echo 'QA pipeline unstable: review test failures.'
         }
 
         failure {
-            echo '''
-                Pipeline failed.
-                Review the Docker logs and Cucumber test report.
-            '''
-        }
-
-        cleanup {
-            script {
-                if (fileExists(
-                    'student-management-system/docker-compose.yml'
-                )) {
-                    dir('student-management-system') {
-                        bat '''
-                            docker compose down -v --remove-orphans
-                        '''
-                    }
-                }
-            }
+            echo 'QA pipeline failed: review Jenkins logs.'
         }
     }
 }
